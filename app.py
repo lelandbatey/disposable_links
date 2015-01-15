@@ -56,7 +56,7 @@ def build_file_tree_html(tree):
         """Makes the lists of transformed file names"""
         line_list = []
         node_str = ""
-        for x in curr_dir:
+        for x in sorted(curr_dir.keys()):
             node_str += "   "*depth
             node_str += (x[:33]+'..') if len(x)+3*depth > 35 else x
             if isinstance(curr_dir[x], basestring):
@@ -97,7 +97,7 @@ def get_file_list():
         buckets = build_file_tree_html(buckets)
 
         # buckets = database.json_dump(buckets)
-        return render_template('file_list.html', file_struct=buckets)
+        return render_template('file_list.html', file_struct=buckets, name="File List")
 
 
 @app.route('/add_file/', methods=['GET', 'POST'])
@@ -117,14 +117,14 @@ def add_url():
         DB.new_entry(file_location, expiration_delta)
         return "success"
     else:
-        return render_template('active_links.html', files=DB.to_dict())
+        return render_template('active_links.html', files=DB.to_dict(), name="Active Links")
 
 
 @app.route('/list_active/')
 @basic_auth.required
 def list_active():
     """Lists all the possible url's and what they point to."""
-    return render_template('active_links.html', files=DB.to_dict())
+    return render_template('active_links.html', files=DB.to_dict(), name="Active Links")
 
 
 
