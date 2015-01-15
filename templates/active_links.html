@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+
+{% block body %}
+<p>
+<script type="text/javascript">
+
+function submit_file(){
+	var file_location = $('#fileField').val();
+
+	$.ajax({
+		type: 'POST',
+		url: '/add_file/',
+		data: JSON.stringify({'file_location': file_location}),
+		contentType: "application/text; charset=utf-8",
+		success: function (){
+			location.reload();
+		}
+	});
+}
+
+</script>
+	<input id="fileField" size="20">
+	<button onclick="submit_file()">Add file</button>
+</p>
+
+<ul>
+	{% for item in files %}
+		<li><h3>{{ files[item]['file_location'] }}</h3>
+			<ul>
+				<li>
+					<a href="{{ url_for('download', file_id=item) }}">
+						file_id: {{ files[item]['file_id'] }}
+					</a>
+				</li>
+				<li>expiration_date: {{ files[item]['expiration_date'] }}</li>
+				<li>file_location: {{ files[item]['file_location'] }}</li>
+				<li>is_expired: {{ files[item]['is_expired'] }}</li>
+				<li>file_exists: {{ files[item]['file_exists'] }}</li>
+				<li>download_count: {{ files[item]['download_count'] }}</li>
+			</ul>
+		</li>
+	{% endfor %}
+</ul>
+{% endblock body %}

@@ -45,6 +45,33 @@ def datetime_to_epoch(indate):
     """Converts a datetime object to an epoch timestamp."""
     return (indate - datetime.datetime(1970, 1, 1)).total_seconds()
 
+class ConfigReader(object):
+    """Reads the configuration from a file."""
+    def __init__(self, config_file='config.json'):
+        self.config_file = config_file
+        self.username = ""
+        self.password = ""
+        self.view_directories = ""
+        self.read_config()
+
+    def read_config(self):
+        """Reads variables from config file into class."""
+        c = json.load(open(self.config_file, 'r'))
+        def panic(err):
+            print(err)
+            exit()
+
+        if not 'username' in c:
+            panic("Config file must specify username.")
+        if not 'password' in c:
+            panic("Config file must specify password.") 
+        if not 'buckets' in c:
+            panic("Config file must specify at least one bucket (viewable directory).")
+
+        self.username = c['username']
+        self.password = c['password']
+        self.buckets = c['buckets']
+        
 
 class FileEntry(object):
     """Object representing file entry in the database."""
@@ -52,6 +79,7 @@ class FileEntry(object):
         self.file_id = file_id
         self.location = location
         self.expiration_date = expiration_date
+        self.download_count = 0
 
     @property
     def is_expired(self):
@@ -68,6 +96,7 @@ class FileEntry(object):
         tmp['file_id'] = self.file_id
         tmp['expiration_date'] = str(datetime_to_epoch(self.expiration_date))
         tmp['file_exists'] = os.path.isfile(self.location)
+        tmp['download_count'] = self.download_count
         return tmp
 
     def __repr__(self):
@@ -78,8 +107,9 @@ class FileEntry(object):
 
 class Database(object):
     """Database for holding the file information."""
-    def __init__(self):
+    def __init__(self, config_file='config.json'):
         self._db = {}
+        self.config = ConfigReader(config_file)
         
     def new_entry(self, location, expiration_delta=1):
         """Creates entry for the new file in the database, returning its id."""
@@ -95,6 +125,7 @@ class Database(object):
     def get_entry(self, file_id):
         """Returns dictionary object for file entry, if it exists."""
         if file_id in self._db:
+            self._db[file_id].download_count += 1
             return json.loads(str(self._db[file_id]))
 
         return None
