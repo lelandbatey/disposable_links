@@ -77,76 +77,6 @@ class ConfigReader(object):
         self.cache = c['cache']
         
 
-class FileEntry(object):
-    """Object representing file entry in the database."""
-    def __init__(self, file_id, location, expiration_date):
-        self.file_id = file_id
-        self.location = location
-        self.expiration_date = expiration_date
-        self.download_count = 0
-
-    @property
-    def is_expired(self):
-        """Checks if this FileEntry object is past it's expiration date."""
-        if self.expiration_date < datetime.datetime.now():
-            return True
-        return False
-
-    def _build_self_dict(self):
-        """Build a dictionary representation of itself."""
-        tmp = {}
-        tmp['is_expired'] = self.is_expired
-        tmp['file_location'] = self.location
-        tmp['file_id'] = self.file_id
-        tmp['expiration_date'] = str(datetime_to_epoch(self.expiration_date))
-        tmp['file_exists'] = os.path.isfile(self.location)
-        tmp['download_count'] = self.download_count
-        return tmp
-
-    def __repr__(self):
-        return json_dump(self._build_self_dict())
-    def __json__(self):
-        return self._build_self_dict()
-        
-
-class Database(object):
-    """Database for holding the file information."""
-    def __init__(self, config_file='config.json'):
-        self._db = {}
-        self.config = ConfigReader(config_file)
-        
-    def new_entry(self, location, expiration_delta=1):
-        """Creates entry for the new file in the database, returning its id."""
-        file_id = random_string()
-
-        now = datetime.datetime.now()
-        expiration_date = now + datetime.timedelta(days=expiration_delta)
-        
-        self._db[file_id] = FileEntry(file_id, location, expiration_date)
-
-        return file_id
-
-    def get_entry(self, file_id):
-        """Returns dictionary object for file entry, if it exists."""
-        if file_id in self._db:
-            self._db[file_id].download_count += 1
-            return json.loads(str(self._db[file_id]))
-
-        return None
-
-    def remove_entry(self, file_id):
-        """Removes the specified file entry."""
-        if file_id in self._db:
-            del self._db[file_id]
-
-    def to_dict(self):
-        """Returns a dict object representing the DB."""
-        
-        return json.loads(json_dump(self._db))
-
-
-
-
 class SqliteDatabase(object):
     """Database for holding the file information. Uses Sqlite3 as backend."""
     def __init__(self, db_name="links_database.sqlite3"):
@@ -260,8 +190,6 @@ class SqliteDatabase(object):
         out = self.results_to_entry(out)
 
         return {x['file_id']: self.collate_entry(x) for x in out}
-
-
 
 
 
