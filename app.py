@@ -24,7 +24,6 @@ def get_file_params(file_id):
     """Gets information about a file, as well as sanity checks."""
     sql_db = database.SqliteDatabase()
     tmp = sql_db.get_entry(file_id)
-    database.jp(tmp)
 
     # Check that the file exists and is valid.
     if not tmp or tmp['is_expired']:
@@ -32,11 +31,12 @@ def get_file_params(file_id):
             sql_db.remove_entry(file_id)
         raise KeyError("Invalid file id.")
 
-    server_path = tmp['file_location']
+    file_location = tmp['file_location']
+    is_remote = tmp['is_remote']
 
-    if not tmp['file_exists']:
+    if not tmp['file_exists'] and not is_remote:
         raise KeyError("The file for this id does not exist.")
-    return server_path
+    return file_location, is_remote
 
 
 def get_directory_structure(rootdir):
@@ -60,18 +60,18 @@ def build_file_tree_html(tree):
         """Makes the lists of transformed file names"""
         line_list = []
         node_str = ""
-        for x in sorted(curr_dir.keys()):
+        for item in sorted(curr_dir.keys()):
             node_str += "  "*depth
-            node_str = ((node_str+x)[:48]+'..') if (len(node_str+x)) > 50 else node_str+x
-            if isinstance(curr_dir[x], basestring):
+            node_str = ((node_str+item)[:48]+'..') if (len(node_str+item)) > 50 else node_str+item
+            if isinstance(curr_dir[item], basestring):
                 line_list.append([
-                    node_str, curr_dir[x]
+                    node_str, curr_dir[item]
                 ])
-            elif isinstance(curr_dir[x], dict):
+            elif isinstance(curr_dir[item], dict):
                 line_list.append([
                     node_str, None
                 ])
-                line_list += build_level(curr_dir[x], depth+1)
+                line_list += build_level(curr_dir[item], depth+1)
             node_str = ""
         return line_list
 
@@ -141,8 +141,22 @@ def list_active():
 # works, and the best way, is to use the built in `send_file` method.
 @app.route('/download/<file_id>')
 def download(file_id):
-    server_path = get_file_params(file_id)
-    return send_file(server_path, as_attachment=True)
+    """Serves the file being requested."""
+    file_location, is_remote = get_file_params(file_id)
+
+    def update_file_location(location):
+        sql_db = database.SqliteDatabase()
+        sql_db.update_location(file_id, location)
+
+    if is_remote:
+        stream = http_streamer.Streamer(\
+            file_location,\
+            cache=True,\
+            cache_location=CONFIG.cache)
+        return Response(stream.generator(update_file_location), mimetype=stream.mimetype)
+
+    else:
+        return send_file(file_location, as_attachment=True)
 
 
 @app.route('/get_url/<path:remote_file>')

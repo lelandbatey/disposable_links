@@ -52,6 +52,8 @@ class ConfigReader(object):
         self.config_file = config_file
         self.username = ""
         self.password = ""
+        self.buckets = ""
+        self.cache = ""
         self.view_directories = ""
         self.read_config()
 
@@ -137,6 +139,8 @@ class SqliteDatabase(object):
             tmp['is_expired'] = True
         else:
             tmp['is_expired'] = False
+
+        tmp['is_remote'] = True if "://" in tmp['file_location'] else False
         return tmp
 
     def get_entry(self, file_id):
@@ -144,6 +148,9 @@ class SqliteDatabase(object):
         entry = self.fetch_entry(file_id)
         if entry:
             entry = self.collate_entry(entry)
+            # Increment the download counter.
+            self.cursor.execute("UPDATE files SET download_count=download_count + 1 WHERE file_id=?", (file_id,))
+            self.connection.commit()
 
         return entry
 
@@ -153,8 +160,7 @@ class SqliteDatabase(object):
             "SELECT * FROM files WHERE file_location=?",\
             (location,))
         out = self.cursor.fetchall()
-        print(location)
-        jp(out)
+
         if not out:
             return False
         else:
@@ -176,10 +182,19 @@ class SqliteDatabase(object):
         self.connection.commit()
         return file_id
 
+    def update_location(self, file_id, location):
+        """Changes the location of a file id."""
+        if self.fetch_entry(file_id):
+            print("Updating location of the file: ", file_id)
+            self.cursor.execute(\
+                "UPDATE files SET file_location=? WHERE file_id=?",\
+                (location, file_id))
+            self.connection.commit()
+
     def remove_entry(self, file_id):
         """Removes the specified file entry."""
-        if self.get_entry(file_id):
-            print("Deleting file with id:", file_id)
+        if self.fetch_entry(file_id):
+
             self.cursor.execute("DELETE FROM files WHERE file_id=?", (file_id,))
             self.connection.commit()
 
