@@ -1,7 +1,8 @@
-#!/usr/env python
+#!/usr/bin/env python
 from __future__ import print_function
-from flask import Flask, request, json, render_template, send_file
+from flask import Flask, request, render_template, send_file, Response
 from flask.ext.basicauth import BasicAuth
+import http_streamer
 import database
 import os.path
 import json
@@ -10,22 +11,25 @@ import os
 app = Flask(__name__)
 app.USE_X_SENDFILE = True
 
-DB = database.Database()
 
-app.config['BASIC_AUTH_USERNAME'] = DB.config.username
-app.config['BASIC_AUTH_PASSWORD'] = DB.config.password
+CONFIG = database.ConfigReader()
+
+app.config['BASIC_AUTH_USERNAME'] = CONFIG.username
+app.config['BASIC_AUTH_PASSWORD'] = CONFIG.password
 
 basic_auth = BasicAuth(app)
 
 
 def get_file_params(file_id):
     """Gets information about a file, as well as sanity checks."""
-    tmp = DB.get_entry(file_id)
+    sql_db = database.SqliteDatabase()
+    tmp = sql_db.get_entry(file_id)
+    database.jp(tmp)
 
     # Check that the file exists and is valid.
     if not tmp or tmp['is_expired']:
         if tmp['is_expired']:
-            DB.remove_entry(file_id)
+            sql_db.remove_entry(file_id)
         raise KeyError("Invalid file id.")
 
     server_path = tmp['file_location']
@@ -57,8 +61,8 @@ def build_file_tree_html(tree):
         line_list = []
         node_str = ""
         for x in sorted(curr_dir.keys()):
-            node_str += "   "*depth
-            node_str += (x[:33]+'..') if len(x)+3*depth > 35 else x
+            node_str += "  "*depth
+            node_str = ((node_str+x)[:48]+'..') if (len(node_str+x)) > 50 else node_str+x
             if isinstance(curr_dir[x], basestring):
                 line_list.append([
                     node_str, curr_dir[x]
@@ -89,7 +93,7 @@ def get_file_list():
     if request.method == 'GET':
 
         buckets = []
-        for b in DB.config.buckets:
+        for b in CONFIG.buckets:
             tree = get_directory_structure(b)
             tree = { b: tree[tree.keys()[0]]}
             buckets.append(tree)
@@ -104,6 +108,7 @@ def get_file_list():
 @basic_auth.required
 def add_url():
     """Adds a file entry to the database."""
+    sql_db = database.SqliteDatabase()
     if request.method == 'POST':
         data = json.loads(request.data)
         if 'file_location' in data:
@@ -114,17 +119,18 @@ def add_url():
             expiration_delta = int(data['expiration_delta'])
         else:
             expiration_delta = 1
-        DB.new_entry(file_location, expiration_delta)
+        sql_db.new_entry(file_location, expiration_delta)
         return "success"
     else:
-        return render_template('active_links.html', files=DB.to_dict(), name="Active Links")
+        return render_template('active_links.html', files=sql_db.to_dict(), name="Active Links")
 
 
 @app.route('/list_active/')
 @basic_auth.required
 def list_active():
     """Lists all the possible url's and what they point to."""
-    return render_template('active_links.html', files=DB.to_dict(), name="Active Links")
+    sql_db = database.SqliteDatabase()
+    return render_template('active_links.html', files=sql_db.to_dict(), name="Active Links")
 
 
 
@@ -138,6 +144,18 @@ def download(file_id):
     server_path = get_file_params(file_id)
     return send_file(server_path, as_attachment=True)
 
+
+@app.route('/get_url/<path:remote_file>')
+def get_remote_file(remote_file):
+    stream = http_streamer.Streamer(remote_file)
+    return Response(stream.generator(), mimetype=stream.mimetype)
+
+@app.route('/remove/<file_id>')
+@basic_auth.required
+def remove(file_id):
+    sql_db = database.SqliteDatabase()
+    sql_db.remove_entry(file_id)
+    return ""
 
 if __name__ == '__main__':
     app.debug = True

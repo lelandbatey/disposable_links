@@ -38,6 +38,9 @@ function submit_file(){
 				<li>is_expired: {{ files[item]['is_expired'] }}</li>
 				<li>file_exists: {{ files[item]['file_exists'] }}</li>
 				<li>download_count: {{ files[item]['download_count'] }}</li>
+				<li>
+					<a href="{{url_for('remove', file_id=item) }}">DELETE SHORTLINK</a>
+				</li>
 			</ul>
 		</li>
 	{% endfor %}

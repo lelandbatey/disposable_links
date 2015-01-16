@@ -35,16 +35,14 @@ function post_file(file_location){
 		type: 'POST',
 		url: '/add_file/',
 		data: JSON.stringify({'file_location': file_location}),
-		contentType: "application/text; charset=utf-8",
-		success: function (){
-			location.reload();
-		}
+		contentType: "application/text; charset=utf-8"
 	});
 }
 
 function submit_file(){
 	var file_location = $('#fileField').val();
-	post_file(file_location);	
+	post_file(file_location);
+	location.reload();
 }
 
 $(".link_maker").click(function(e){
