@@ -27,8 +27,6 @@ def get_file_params(file_id):
 
     # Check that the file exists and is valid.
     if not tmp or tmp['is_expired']:
-        if tmp['is_expired']:
-            sql_db.remove_entry(file_id)
         raise KeyError("Invalid file id.")
 
     file_location = tmp['file_location']
@@ -161,6 +159,7 @@ def download(file_id):
 
 @app.route('/get_url/<path:remote_file>')
 def get_remote_file(remote_file):
+    print(remote_file)
     stream = http_streamer.Streamer(remote_file)
     return Response(stream.generator(), mimetype=stream.mimetype)
 
@@ -168,6 +167,15 @@ def get_remote_file(remote_file):
 @basic_auth.required
 def remove(file_id):
     sql_db = database.SqliteDatabase()
+
+    # To keep disk-space lean, when 
+    entry = sql_db.get_entry(file_id)
+    tmp = entry['file_location']
+    tmp = os.path.join(os.path.abspath(CONFIG.cache), os.path.basename(tmp))
+
+    if os.path.exists(tmp):
+        os.remove(tmp)
+
     sql_db.remove_entry(file_id)
     return ""
 

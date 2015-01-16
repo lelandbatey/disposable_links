@@ -15,7 +15,7 @@ class Streamer(object):
         self.opener = None
         self._mimetype = None
         self._size = None
-        self._filname = None
+        self._filename = None
 
     def generator(self, callback=None):
         """Yields chunks of the downloaded files."""
@@ -31,6 +31,7 @@ class Streamer(object):
             location = os.path.join(os.path.abspath(self.cache_location), fname)
             c_file = open(location, 'wb')
 
+        print(self.opener.geturl())
         while True:
             chunk = self.opener.read(chunk_size)
             if not chunk:
@@ -44,10 +45,10 @@ class Streamer(object):
 
     def filename(self):
         """Determines name of the file."""
-        if self._filname == None:
+        if self._filename == None:
             path = urlparse.urlsplit(self.remote_url).path
-            self._filname = posixpath.basename(path)
-        return self._filname
+            self._filename = posixpath.basename(path)
+        return self._filename
 
     @property
     def size(self):
@@ -64,6 +65,7 @@ class Streamer(object):
         """Figures out mimetype if unknown."""
         if not self._mimetype:
             if self.opener == None:
+                print(self.remote_url)
                 self.opener = urllib2.urlopen(self.remote_url)
             info = self.opener.info()
             self._mimetype = info.type
