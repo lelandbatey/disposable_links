@@ -3,10 +3,13 @@ from __future__ import print_function
 from flask import Flask, request, render_template, send_file, Response
 from flask.ext.basicauth import BasicAuth
 import http_streamer
+import mimetypes
 import database
 import os.path
 import json
 import os
+import re
+
 
 app = Flask(__name__)
 app.USE_X_SENDFILE = True
@@ -79,27 +82,56 @@ def build_file_tree_html(tree):
     return lines
 
 
+# These next two functions are from here:
+#     http://blog.asgaard.co.uk/2012/08/03/http-206-partial-content-for-flask-python
+@app.after_request
+def add_range_headers(response):
+    """Lets browsers know they can request ranges."""
+    response.headers.add('Accept-Ranges', 'bytes')
+    return response
+
+def send_file_partial(path, request):
+    """
+        Simple wrapper around send_file which handles HTTP 206 Partial Content
+        (byte ranges)
+        TODO: handle all send_file args, mirror send_file's error handling
+        (if it has any)
+    """
+    range_header = request.headers.get('Range', None)
+    if not range_header:
+        return send_file(path)
+
+    size = os.path.getsize(path)    
+    byte1, byte2 = 0, None
+
+    m = re.search('(\d+)-(\d*)', range_header)
+    g = m.groups()
+
+    if g[0]: byte1 = int(g[0])
+    if g[1]: byte2 = int(g[1])
+
+    length = size - byte1
+    if byte2 is not None:
+        length = byte2 - byte1 + 1
+
+    data = None
+    with open(path, 'rb') as f:
+        f.seek(byte1)
+        data = f.read(length)
+
+    rv = Response(data, 
+        206,
+        mimetype=mimetypes.guess_type(path)[0], 
+        direct_passthrough=True)
+    rv.headers.add('Content-Range', 'bytes {0}-{1}/{2}'.format(byte1, byte1 + length - 1, size))
+
+    return rv
+
 
 @app.route('/')
 def root():
     """Serves a blank root."""
     return ""
-
-@app.route('/list_files/', methods=['GET', 'POST'])
-@basic_auth.required
-def get_file_list():
-    if request.method == 'GET':
-
-        buckets = []
-        for b in CONFIG.buckets:
-            tree = get_directory_structure(b)
-            tree = { b: tree[tree.keys()[0]]}
-            buckets.append(tree)
-
-        buckets = build_file_tree_html(buckets)
-
-        # buckets = database.json_dump(buckets)
-        return render_template('file_list.html', file_struct=buckets, name="File List")
 
 
 @app.route('/add_file/', methods=['GET', 'POST'])
@@ -121,6 +153,20 @@ def add_url():
         return "success"
     else:
         return render_template('active_links.html', files=sql_db.to_dict(), name="Active Links")
+
+
+@app.route('/list_files/', methods=['GET', 'POST'])
+@basic_auth.required
+def get_file_list():
+    if request.method == 'GET':
+        buckets = []
+        for b in CONFIG.buckets:
+            tree = get_directory_structure(b)
+            tree = { b: tree[tree.keys()[0]]}
+            buckets.append(tree)
+        buckets = build_file_tree_html(buckets)
+
+        return render_template('file_list.html', file_struct=buckets, name="File List")
 
 
 @app.route('/list_active/')
@@ -154,14 +200,8 @@ def download(file_id):
         return Response(stream.generator(update_file_location), mimetype=stream.mimetype)
 
     else:
-        return send_file(file_location)
+        return send_file_partial(file_location, request)
 
-
-@app.route('/get_url/<path:remote_file>')
-def get_remote_file(remote_file):
-    print(remote_file)
-    stream = http_streamer.Streamer(remote_file)
-    return Response(stream.generator(), mimetype=stream.mimetype)
 
 @app.route('/remove/<file_id>')
 @basic_auth.required

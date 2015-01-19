@@ -55,7 +55,11 @@ def simple_app(environ, start_response):
         status = get_status_from_code(404)
         start_response(status, [])
         return "404"
-    print(url)
+
+    # This is a local file, so we hand off to the flask application.
+    if '://' not in url:
+        environ['PATH_INFO'] = environ['SCRIPT_NAME'] + environ['PATH_INFO']
+        return frontend(environ, start_response)
 
     headers = extract_request_headers(environ)
     fproxy = proxy_response.ProxyResponse(url, headers)
@@ -79,7 +83,7 @@ def simple_app(environ, start_response):
 
 
 APPLICATION = DispatcherMiddleware(frontend, {
-    '/dl':     simple_app
+    '/download': simple_app
 })
 
 if __name__ == '__main__':
