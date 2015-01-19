@@ -1,6 +1,6 @@
 from __future__ import print_function
 from threading import Thread
-from Queue import Queue
+from Queue import Queue, Full
 import posixpath
 import urlparse
 import urllib2
@@ -16,7 +16,7 @@ class ProxyResponse(object):
         self.request_headers = headers
         self._response_headers = None
         self._response_code = None
-        self.data_queue = Queue()
+        self.data_queue = Queue(1)
         self.finished_download = False
 
         self.open_error = False
@@ -43,8 +43,8 @@ class ProxyResponse(object):
             # print(e.message)
             raise e
 
-        size = int(opener.headers['content-length'])
-        chunk_size = size // 20
+        # size = int(opener.headers['content-length'])
+        chunk_size = 10485760 #size // 20
         chunk_size = 1024 if chunk_size < 1024 else chunk_size
 
         # print("thread: Setting response headers.")
@@ -56,7 +56,15 @@ class ProxyResponse(object):
             chunk = opener.read(chunk_size)
             if not chunk:
                 break
-            self.data_queue.put(chunk)
+            # If the client hasn't read 10 mb of data in 30 seconds, assume
+            # that the client has disconnected and exit this thread.
+            try:
+                # print("Put data")
+                self.data_queue.put(chunk, block=True, timeout=5)
+                # print("successful!")
+            except Full:
+                # print("Client has disconnected, stopping reading.")
+                break
         self.finished_download = True
 
     @property

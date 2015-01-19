@@ -5,6 +5,8 @@ from frontend import app as frontend
 import proxy_response
 import database
 import httplib
+import urllib
+import gc
 
 
 def extract_request_headers(environ):
@@ -26,6 +28,10 @@ def get_url(environ):
             remote = entry['file_location']
     else:
         remote = path_info
+        # URL's embeded in the path of the request are unescaped, which makes
+        # for invalid requests on the backend. So we have to re-escape them.
+        remote = urllib.quote(remote)
+        remote = remote.replace("%3A", ":")
 
     return remote
 
@@ -41,13 +47,14 @@ def simple_app(environ, start_response):
     Proxys a file request back to the client, either via direct streaming or
     from the local cache.
     """
+    gc.collect()
 
     url = get_url(environ)
     if not url:
         status = get_status_from_code(404)
         start_response(status, [])
         return "404"
-    # print(url)
+    print(url)
 
     headers = extract_request_headers(environ)
     fproxy = proxy_response.ProxyResponse(url, headers)
