@@ -18,7 +18,7 @@ def extract_request_headers(environ):
 
 def get_url(environ):
     """Get's the URL to be fetched."""
-    remote = ""
+    remote = None
     sql_db = database.SqliteDatabase()
     path_info = environ['PATH_INFO'][1:]
 
@@ -30,12 +30,13 @@ def get_url(environ):
         remote = path_info
         # URL's embeded in the path of the request are unescaped, which makes
         # for invalid requests on the backend. So we have to re-escape them.
-        remote = urllib.quote(remote)
-        remote = remote.replace("%3A", ":")
+        #
+        # Since the url was unescaped, if we escape the entire thing we'll
+        # accidentally escape the 'scheme' section of the url. So, we skip the
+        # first bit (arbitrary amount) of the url when re-encoding.
+        remote = "".join([remote[:8], urllib.quote(remote[8:])])
 
     return remote
-
-    # return """http://comp.adrenl.in/Pasha%20biceps%20-%20biceps%20is%20always%20with%20you%20-%20sound%20download%20HD-o03JwjEM5yc.mp4"""
 
 def get_status_from_code(code):
     """Returns the proper http response message for a given code."""
@@ -81,5 +82,9 @@ APPLICATION = DispatcherMiddleware(frontend, {
     '/dl':     simple_app
 })
 
+if __name__ == '__main__':
+    # Run a debug server
+    from werkzeug.serving import run_simple
+    run_simple('localhost', 5000, APPLICATION, use_reloader=True)
 
 

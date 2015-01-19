@@ -4,8 +4,8 @@ from Queue import Queue, Full
 import posixpath
 import urlparse
 import urllib2
+import time
 
-# from pprint import pprint
 
 
 
@@ -27,7 +27,7 @@ class ProxyResponse(object):
 
     def download_file(self):
         """Downloads the file in a seperate thread."""
-        del self.request_headers['HOST']
+        if 'HOST' in self.request_headers: del self.request_headers['HOST']
         request = urllib2.Request(self.url, headers=self.request_headers)
         try:
             # print("thread: Downloading file", self.url)
@@ -44,28 +44,32 @@ class ProxyResponse(object):
             raise e
 
         # size = int(opener.headers['content-length'])
-        chunk_size = 10485760 #size // 20
-        chunk_size = 1024 if chunk_size < 1024 else chunk_size
+        # Chunk size is 0.5 megabytes
+        chunk_size = 524288
 
-        # print("thread: Setting response headers.")
         self._response_headers = dict(opener.info())
         self._response_code = opener.getcode()
 
         # print("thread: Begin reading in data.")
+        # import datetime
         while True:
             chunk = opener.read(chunk_size)
             if not chunk:
                 break
-            # If the client hasn't read 10 mb of data in 30 seconds, assume
-            # that the client has disconnected and exit this thread.
+            # If the client hasn't read 0.5 mb of data in 5 seconds, assume
+            # that the client has disconnected and exit this thread. The
+            # timeout for this must accomadate for slow clients, since a
+            # sufficiently slow client will not empty the queue in time.
             try:
-                # print("Put data")
-                self.data_queue.put(chunk, block=True, timeout=5)
-                # print("successful!")
+                # start = (datetime.datetime.now() - datetime.datetime(1970, 1, 1)).total_seconds()
+                self.data_queue.put(chunk, block=True, timeout=8)
+                # end = (datetime.datetime.now() - datetime.datetime(1970, 1, 1)).total_seconds()
+                # print("Time in queue:", end-start)
             except Full:
                 # print("Client has disconnected, stopping reading.")
                 break
         self.finished_download = True
+        print("Finished download!")
 
     @property
     def response_code(self):
@@ -73,6 +77,7 @@ class ProxyResponse(object):
         while True:
             if self._response_code:
                 return self._response_code
+            else: time.sleep(0.1)
 
     @property
     def response_headers(self):
@@ -80,6 +85,7 @@ class ProxyResponse(object):
         while True:
             if self._response_headers:
                 return self._response_headers
+            else: time.sleep(0.1)
 
     @property
     def filename(self):
@@ -96,11 +102,15 @@ class ProxyResponse(object):
             if not self.data_queue.empty():
                 data = self.data_queue.get()
                 yield data
+            # This sleep is especially important, since it stops the CPU from
+            # spending all it's time whirling through this loop and sucking up
+            # CPU.
+            else: time.sleep(0.1)
 
 
 def main():
     """Tests our class."""
-    rand_url = "http://f.xwl.me/Adventure.Time.S06E11.Little.Brother.HDTV.x264-W4F.mp4"
+    rand_url = "http://comp.adrenl.in/Adventure.Time.S06E11.Little.Brother.HDTV.x264-W4F.mp4"
     headers = {
         'ACCEPT': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'ACCEPT_ENCODING': 'gzip, deflate',
@@ -115,8 +125,19 @@ def main():
     print(file_response.response_headers)
     print(file_response.filename)
 
+    for _ in file_response:
+        pass
+    print("Finished fetching file response.")
+
+
+def profile():
+    """Checks how fast it takes to download a file."""
+    import cProfile
+    cProfile.run('main()')
+
 
 
 if __name__ == '__main__':
-    main()
+    # main()
+    profile()
 
