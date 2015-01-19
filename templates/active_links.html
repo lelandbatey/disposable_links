@@ -29,7 +29,7 @@ function submit_file(){
 		<li><h3>{{ files[item]['file_location'] }}</h3>
 			<ul>
 				<li>
-					<a href="{{ url_for('download', file_id=item) }}">
+					<a href="/dl/{{ files[item]['file_id'] }}">
 						file_id: {{ files[item]['file_id'] }}
 					</a>
 				</li>
