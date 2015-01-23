@@ -154,8 +154,8 @@ def caching_proxy(environ, start_response):
 
     response_headers = format_response_headers(response)
     status = response.response_status
-    print(status, response_headers)
-    print(response)
+    # print(status, response_headers)
+    # print(response)
     start_response(status, response_headers)
     return response
 

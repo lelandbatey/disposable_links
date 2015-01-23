@@ -107,7 +107,7 @@ class CacheResponse(object):
         if db.is_locked(self.file_id):
             return
         db.lock_entry(self.file_id)
-        print("Downloading file to disk.")
+        # print("Downloading file to disk.")
         try:
             if 'HOST' in self.request_headers: 
                 del self.request_headers['HOST']
@@ -136,11 +136,11 @@ class CacheResponse(object):
             db.update_location(self.file_id, location)
             db.unlock_entry(self.file_id)            
         except Exception as err:
-            print("Encountered err while downloading to disk: ", err)
+            # print("Encountered err while downloading to disk: ", err)
             raise err
         finally:
             db.unlock_entry(self.file_id)
-            print("Database has been unlocked.")
+            # print("Database has been unlocked.")
 
     def return_file(self, byte1=0, byte2=None):
         """Reads a file, or part of a file, and yields it as an iterable."""
@@ -178,12 +178,20 @@ class CacheResponse(object):
         yieldable = None
         if not self.is_cached:
             yieldable = self.passthrough
+            # print("Iterating over passthrough object.")
         elif self.is_cached:
             if self.byte_range:
                 yieldable = self.return_file(
                     self.byte_range[0], self.byte_range[1])
+                # print("Iterating on local file {} from {} to {}".format(
+                #     self.database.get_entry(self.file_id)['local_location'],
+                #     self.byte_range[0],
+                #     self.byte_range[1]
+                # ))
             else:
                 yieldable = self.return_file()
+                # print("Iterating on local file {}".format(
+                #     self.database.get_entry(self.file_id)['local_location']))
 
         for thing in yieldable:
             yield thing
