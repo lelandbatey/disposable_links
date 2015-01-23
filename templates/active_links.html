@@ -30,16 +30,20 @@ function submit_file(){
 			<ul>
 				<li>
 					<a href="{{ url_for('download', file_id=item) }}">
-						file_id: {{ files[item]['file_id'] }}
+						Download: {{ files[item]['file_id'] }}
 					</a>
 				</li>
-				<li>expiration_date: {{ files[item]['expiration_date'] }}</li>
+				
+				{% for flag in files[item].keys() %}
+				<li>{{flag}}: {{files[item][flag]}}</li>
+				{% endfor %}
+<!-- 				<li>expiration_date: {{ files[item]['expiration_date'] }}</li>
 				<li>file_location: {{ files[item]['file_location'] }}</li>
 				<li>is_expired: {{ files[item]['is_expired'] }}</li>
 				<li>is_remote: {{ files[item]['is_remote'] }}</li>
 				<li>file_exists: {{ files[item]['file_exists'] }}</li>
 				<li>download_count: {{ files[item]['download_count'] }}</li>
-				<li>
+ -->				<li>
 					<a href="{{url_for('remove', file_id=item) }}">DELETE SHORTLINK</a>
 				</li>
 			</ul>

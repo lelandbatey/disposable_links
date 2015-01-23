@@ -16,6 +16,7 @@ app.USE_X_SENDFILE = True
 
 
 CONFIG = database.ConfigReader()
+DBCLASS = database.AlchemyDatabase
 
 app.config['BASIC_AUTH_USERNAME'] = CONFIG.username
 app.config['BASIC_AUTH_PASSWORD'] = CONFIG.password
@@ -25,7 +26,7 @@ basic_auth = BasicAuth(app)
 
 def get_file_params(file_id):
     """Gets information about a file, as well as sanity checks."""
-    sql_db = database.SqliteDatabase()
+    sql_db = DBCLASS()
     tmp = sql_db.get_entry(file_id)
 
     # Check that the file exists and is valid.
@@ -104,28 +105,32 @@ def send_file_partial(path, request):
     size = os.path.getsize(path)    
     byte1, byte2 = 0, None
 
-    m = re.search('(\d+)-(\d*)', range_header)
-    g = m.groups()
+    range_str = re.search('(\d+)-(\d*)', range_header).groups()
 
-    if g[0]: byte1 = int(g[0])
-    if g[1]: byte2 = int(g[1])
+    if range_str[0]:
+        byte1 = int(range_str[0])
+    if range_str[1]:
+        byte2 = int(range_str[1])
 
     length = size - byte1
     if byte2 is not None:
         length = byte2 - byte1 + 1
 
     data = None
-    with open(path, 'rb') as f:
-        f.seek(byte1)
-        data = f.read(length)
+    with open(path, 'rb') as t_file:
+        t_file.seek(byte1)
+        data = t_file.read(length)
 
-    rv = Response(data, 
-        206,
-        mimetype=mimetypes.guess_type(path)[0], 
-        direct_passthrough=True)
-    rv.headers.add('Content-Range', 'bytes {0}-{1}/{2}'.format(byte1, byte1 + length - 1, size))
+    to_return = Response(data, 
+                         206,
+                         mimetype=mimetypes.guess_type(path)[0], 
+                         direct_passthrough=True)
+    to_return.headers.add(
+        'Content-Range',
+        'bytes {0}-{1}/{2}'.format(byte1, byte1 + length - 1, size)
+    )
 
-    return rv
+    return to_return
 
 
 @app.route('/')
@@ -138,7 +143,7 @@ def root():
 @basic_auth.required
 def add_url():
     """Adds a file entry to the database."""
-    sql_db = database.SqliteDatabase()
+    sql_db = DBCLASS()
     if request.method == 'POST':
         data = json.loads(request.data)
         if 'file_location' in data:
@@ -155,25 +160,24 @@ def add_url():
         return render_template('active_links.html', files=sql_db.to_dict(), name="Active Links")
 
 
-@app.route('/list_files/', methods=['GET', 'POST'])
+@app.route('/list_files/')
 @basic_auth.required
 def get_file_list():
-    if request.method == 'GET':
-        buckets = []
-        for b in CONFIG.buckets:
-            tree = get_directory_structure(b)
-            tree = { b: tree[tree.keys()[0]]}
-            buckets.append(tree)
-        buckets = build_file_tree_html(buckets)
+    buckets = []
+    for b in CONFIG.buckets:
+        tree = get_directory_structure(b)
+        tree = { b: tree[tree.keys()[0]]}
+        buckets.append(tree)
+    buckets = build_file_tree_html(buckets)
 
-        return render_template('file_list.html', file_struct=buckets, name="File List")
+    return render_template('file_list.html', file_struct=buckets, name="File List")
 
 
 @app.route('/list_active/')
 @basic_auth.required
 def list_active():
     """Lists all the possible url's and what they point to."""
-    sql_db = database.SqliteDatabase()
+    sql_db = DBCLASS()
     return render_template('active_links.html', files=sql_db.to_dict(), name="Active Links")
 
 
@@ -183,13 +187,13 @@ def list_active():
 #
 # However, that method doesn't work for crap. The only way that actually
 # works, and the best way, is to use the built in `send_file` method.
-@app.route('/download/<file_id>')
+@app.route('/get/<file_id>')
 def download(file_id):
     """Serves the file being requested."""
     file_location, is_remote = get_file_params(file_id)
 
     def update_file_location(location):
-        sql_db = database.SqliteDatabase()
+        sql_db = DBCLASS()
         sql_db.update_location(file_id, location)
 
     if is_remote:
@@ -206,7 +210,7 @@ def download(file_id):
 @app.route('/remove/<file_id>')
 @basic_auth.required
 def remove(file_id):
-    sql_db = database.SqliteDatabase()
+    sql_db = DBCLASS()
 
     # To keep disk-space lean, when 
     entry = sql_db.get_entry(file_id)

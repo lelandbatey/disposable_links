@@ -1,4 +1,5 @@
 from __future__ import print_function
+from sqlalchemy import create_engine
 import datetime
 import sqlite3
 import os.path
@@ -77,7 +78,186 @@ class ConfigReader(object):
         self.password = c['password']
         self.buckets = c['buckets']
         self.cache = c['cache']
-        
+
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import Column, Integer, String
+from sqlalchemy.orm import sessionmaker
+
+BASE = declarative_base()
+
+class FileEntry(BASE):
+    """Class to hold entry for a file."""
+    __tablename__ = "files"
+    file_id = Column(String, primary_key=True)
+    expiration_date = Column(String)
+    local_location = Column(String)
+    remote_location = Column(String)
+    download_count = Column(Integer)
+    lock = Column(Integer, default=0)
+
+    def __init__(self, file_id, expiration_date, local_location="", \
+        remote_location="", download_count=0):
+        self.file_id = file_id
+        self.expiration_date = expiration_date
+        self.local_location = local_location
+        self.remote_location = remote_location
+        self.download_count = download_count
+
+    def is_expired(self):
+        """
+        Returns true if the current time is past the expiration date of the
+        FileEntry object.
+        """
+        expire_date = epoch_to_datetime(float(self.expiration_date))
+        if expire_date < datetime.datetime.now():
+            return True
+        return False
+
+    @property
+    def file_location(self):
+        """Helper for getting the 'file_location' property."""
+        if self.local_location:
+            return self.local_location
+        if self.remote_location:
+            return self.remote_location
+        return None
+
+    @property
+    def is_remote(self):
+        if not self.local_location:
+            if self.remote_location:
+                return True
+        return False
+
+    @property
+    def file_exists(self):
+        if self.local_location:
+            if os.path.isfile(self.local_location):
+                return True 
+            else:
+                return False
+        if self.is_remote:
+            return True
+        return False
+
+    def to_json(self):
+        """Return a json object of this instance."""
+        return {
+            'file_id' : self.file_id,
+            'file_location': self.file_location,
+            'file_exists' : self.file_exists,
+            'expiration_date' : self.expiration_date,
+            'local_location' : self.local_location,
+            'remote_location' : self.remote_location,
+            'download_count' : self.download_count,
+            'is_expired' : self.is_expired(),
+            'is_remote' : self.is_remote,
+            'is_locked' : self.lock
+        }
+
+    def __repr__(self):
+        return json_dump(self.to_json())
+
+
+
+class AlchemyDatabase(object):
+    """Database for holding file info. Uses SQLAlchemy as backend."""
+    def __init__(self, db_name="links_database.sqlite3"):
+        self.db_name = db_name
+        self.db = create_engine("sqlite:///"+db_name)
+        self.session_class = sessionmaker()
+        self.session_class.configure(bind=self.db)
+        self.session = self.session_class()
+        FileEntry.metadata.create_all(self.db, checkfirst=True)
+
+    def new_entry(self, local_location, expire_delta=1, remote_location=""):
+        """Create a new file entry object and store it in the database."""
+
+        file_id = random_string()
+        now = datetime.datetime.now()
+        expiration_date = now + datetime.timedelta(days=expire_delta)
+        expire_date = datetime_to_epoch(expiration_date)
+
+        # Be very strict about what is the local vs remote location
+        if "://" in local_location:
+            remote_location = local_location
+            local_location = ""
+
+        entry = FileEntry(file_id, remote_location=remote_location,\
+            local_location=local_location, expiration_date=str(expire_date))
+        self.session.add(entry)
+        self.session.commit()
+
+    def remove_entry(self, file_id):
+        """Deletes the FileEntry with the given file_id from the database."""
+        entry = self.session.query(FileEntry).filter_by(file_id=file_id).first()
+        if entry:
+            self.session.delete(entry)
+            self.session.commit()
+
+    def get_entry(self, file_id):
+        """Returns dict representing given FileEntry."""
+        entry = self.session.query(FileEntry).filter_by(file_id=file_id).first()
+        if entry:
+            return entry.to_json()
+
+    def to_dict(self):
+        """Returns dict representing all rows in Database."""
+        to_return = {}
+        entries = self.session.query(FileEntry).all()
+        for entry in entries:
+            to_return[entry.file_id] = entry.to_json()
+        return to_return
+
+    def update_location(self, file_id, local_location):
+        """Changes the local location for the given FileEntry."""
+        entry = self.session.query(FileEntry).filter_by(file_id=file_id).first()
+        if entry:
+            entry.local_location = local_location
+            self.session.commit()
+
+    def is_locked(self, file_id):
+        """Returns true if the given file_id has a lock of '1'."""
+        entry = self.session.query(FileEntry).filter_by(file_id=file_id).first()
+        if not entry:
+            raise KeyError("No entry with that file_id exists.")
+        if entry.lock == 0:
+            return False
+        elif entry.lock == 1:
+            return True
+
+    def lock_entry(self, file_id):
+        """Locks an entry with given file_id."""
+        print("Locking entry:", file_id)
+        entry = self.session.query(FileEntry).filter_by(file_id=file_id).first()
+        if not entry:
+            raise KeyError("No entry with that file_id exists.")
+        if entry.lock == 0:
+            entry.lock = 1
+            self.session.commit()
+        elif entry.lock == 1:
+            raise RuntimeError("Entry with given file_id is already locked.")
+
+    def unlock_entry(self, file_id):
+        """Unlocks an entry with the given file_id."""
+        entry = self.session.query(FileEntry).filter_by(file_id=file_id).first()
+        if not entry:
+            raise KeyError("No entry with that file_id exists.")
+        entry.lock = 0
+        self.session.commit()
+
+    def is_cached(self, file_id):
+        """Returns true if the entry has a local location."""
+        entry = self.session.query(FileEntry).filter_by(file_id=file_id).first()
+        if not entry:
+            raise KeyError("No entry with that file_id exists.")
+        if entry.local_location:
+            return True
+        return False
+
+
+
+
 
 class SqliteDatabase(object):
     """Database for holding the file information. Uses Sqlite3 as backend."""
@@ -86,10 +266,12 @@ class SqliteDatabase(object):
         self.cursor = self.connection.cursor()
         
         self.cursor.execute("""CREATE TABLE IF NOT EXISTS files (
-            file_id         TEXT,
-            file_location   TEXT,
-            expiration_date TEXT,
-            download_count  INTEGER,
+            file_id          TEXT,
+            file_location    TEXT,
+            expiration_date  TEXT,
+            local_location   TEXT,
+            remote_location  TEXT,
+            download_count   INTEGER,
             "timestamp" TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now', 'localtime')),
             UNIQUE(file_id)
         )""")
@@ -108,7 +290,7 @@ class SqliteDatabase(object):
         """Converts SQL results into a list of entries-as-dictionary objects."""
         return self.convert_results(results, [
             'file_id', 'file_location', 'expiration_date',
-            'download_count', 'timestamp'
+            'local_location', 'remote_location', 'download_count', 'timestamp'
         ])
     
     def fetch_entry(self, file_id):
@@ -211,15 +393,15 @@ class SqliteDatabase(object):
 def main():
     """Testing the classes."""
     # d = Database()
-    d = SqliteDatabase()
+    d = AlchemyDatabase()
 
     test_file = "/tmp/some_file"
 
     d.new_entry(test_file, 1)
     dump = d.to_dict()
-    for x in dump:
-        if dump[x]['file_location'] == test_file:
-            d.remove_entry(x)
+    # for x in dump:
+    #     if dump[x]['local_location'] == test_file:
+    #         d.remove_entry(x)
     jp(d.to_dict())
 
 
