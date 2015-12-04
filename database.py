@@ -33,7 +33,7 @@ def random_string(s_len=10): # returns nice 6 character strings
     while i < s_len:
         if random.randint(0, 1): # If we get a 1, we do letters
             to_return += chr(random.randint(97, 122))
- 
+
         else: # we get a 0, we do a number
             to_return += str(random.randint(1, 9))
         i += 1
@@ -68,7 +68,7 @@ class ConfigReader(object):
         if not 'username' in c:
             panic("Config file must specify username.")
         if not 'password' in c:
-            panic("Config file must specify password.") 
+            panic("Config file must specify password.")
         if not 'buckets' in c:
             panic("Config file must specify at least one bucket (viewable directory).")
         if not 'cache' in c:
@@ -133,7 +133,7 @@ class FileEntry(BASE):
     def file_exists(self):
         if self.local_location:
             if os.path.isfile(self.local_location):
-                return True 
+                return True
             else:
                 return False
         if self.is_remote:
@@ -257,136 +257,6 @@ class AlchemyDatabase(object):
 
 
 
-
-
-class SqliteDatabase(object):
-    """Database for holding the file information. Uses Sqlite3 as backend."""
-    def __init__(self, db_name="links_database.sqlite3"):
-        self.connection = sqlite3.connect(db_name)
-        self.cursor = self.connection.cursor()
-        
-        self.cursor.execute("""CREATE TABLE IF NOT EXISTS files (
-            file_id          TEXT,
-            file_location    TEXT,
-            expiration_date  TEXT,
-            local_location   TEXT,
-            remote_location  TEXT,
-            download_count   INTEGER,
-            "timestamp" TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now', 'localtime')),
-            UNIQUE(file_id)
-        )""")
-
-    def convert_results(self, results, fields):
-        """Maps results of query into list of dict-as-objects."""
-        out = []
-        for result in results:
-            tmp = {
-                fields[index]: result[index] for index in range(len(fields))
-            }
-            out.append(tmp)
-        return out
-
-    def results_to_entry(self, results):
-        """Converts SQL results into a list of entries-as-dictionary objects."""
-        return self.convert_results(results, [
-            'file_id', 'file_location', 'expiration_date',
-            'local_location', 'remote_location', 'download_count', 'timestamp'
-        ])
-    
-    def fetch_entry(self, file_id):
-        """Returns raw_database results for file entry, if it exists."""
-        self.cursor.execute("SELECT * FROM files WHERE file_id=?", (file_id,))
-        out = self.cursor.fetchall()
-        out = self.results_to_entry(out)
-
-        if len(out) > 1:
-            raise LookupError(\
-                "LookupError: Multiple entries with the same file_id exist.")
-        if out:
-            return out[0]
-        else:
-            return []
-
-    def collate_entry(self, raw_entry):
-        """
-        Formats a `raw_entry` (output of fetching from the database) into a
-        more useful object.
-        """
-        tmp = dict(raw_entry)
-        tmp['file_exists'] = os.path.isfile(tmp['file_location'])
-
-        expiration_date = float(tmp['expiration_date'])
-        expiration_date = epoch_to_datetime(expiration_date)
-        if expiration_date < datetime.datetime.now():
-            tmp['is_expired'] = True
-        else:
-            tmp['is_expired'] = False
-
-        tmp['is_remote'] = True if "://" in tmp['file_location'] else False
-        return tmp
-
-    def get_entry(self, file_id):
-        """Returns collated file entry, if it exists."""
-        entry = self.fetch_entry(file_id)
-        if entry:
-            entry = self.collate_entry(entry)
-            # Increment the download counter.
-            self.cursor.execute("UPDATE files SET download_count=download_count + 1 WHERE file_id=?", (file_id,))
-            self.connection.commit()
-
-        return entry
-
-    def entry_for_file(self, location):
-        """Given a file location, checks if an entry for that file exists."""
-        self.cursor.execute(\
-            "SELECT * FROM files WHERE file_location=?",\
-            (location,))
-        out = self.cursor.fetchall()
-
-        if not out:
-            return False
-        else:
-            return True
-
-    def new_entry(self, location, expiration_delta=1):
-        """Creates entry for the new file in the database, returning its id."""
-
-        file_id = random_string()
-
-        now = datetime.datetime.now()
-        expiration_date = now + datetime.timedelta(days=expiration_delta)
-        expiration_date = datetime_to_epoch(expiration_date)
-
-        self.cursor.execute("""
-            INSERT INTO files 
-                (file_id, file_location, expiration_date, download_count)
-            VALUES (?,?,?,?)""", (file_id, location, expiration_date, 0))
-        self.connection.commit()
-        return file_id
-
-    def update_location(self, file_id, location):
-        """Changes the location of a file id."""
-        if self.fetch_entry(file_id):
-            print("Updating location of the file: ", file_id)
-            self.cursor.execute(\
-                "UPDATE files SET file_location=? WHERE file_id=?",\
-                (location, file_id))
-            self.connection.commit()
-
-    def remove_entry(self, file_id):
-        """Removes the specified file entry."""
-        if self.fetch_entry(file_id):
-
-            self.cursor.execute("DELETE FROM files WHERE file_id=?", (file_id,))
-            self.connection.commit()
-
-    def to_dict(self):
-        """Returns a dict object representing the DB."""
-        self.cursor.execute("SELECT * FROM files")
-        out = self.cursor.fetchall()
-        out = self.results_to_entry(out)
-
-        return {x['file_id']: self.collate_entry(x) for x in out}
 
 
 
