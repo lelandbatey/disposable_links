@@ -1,71 +1,88 @@
 #!/usr/bin/env python
+
+
 from __future__ import print_function
-from flask import Flask, request, render_template, send_file, Response
-from flask.ext.basicauth import BasicAuth
-import http_streamer
+
+# from functools import reduce
+
 import mimetypes
-import database
 import os.path
 import json
 import os
 import re
 
+from flask import Flask, request, render_template, send_file, Response
+from flask.ext.basicauth import BasicAuth
+from six.moves import reduce
+import six
 
-app = Flask(__name__)
-app.USE_X_SENDFILE = True
+import database
+
+
+APP = Flask(__name__)
+APP.USE_X_SENDFILE = True
 
 
 CONFIG = database.ConfigReader()
 DBCLASS = database.AlchemyDatabase
 
-app.config['BASIC_AUTH_USERNAME'] = CONFIG.username
-app.config['BASIC_AUTH_PASSWORD'] = CONFIG.password
+APP.config['BASIC_AUTH_USERNAME'] = CONFIG.username
+APP.config['BASIC_AUTH_PASSWORD'] = CONFIG.password
 
-basic_auth = BasicAuth(app)
+basic_auth = BasicAuth(APP)
 
 
-def get_file_params(file_id):
-    """Gets information about a file, as well as sanity checks."""
-    sql_db = DBCLASS()
-    tmp = sql_db.get_entry(file_id)
-
-    # Check that the file exists and is valid.
-    if not tmp or tmp['is_expired']:
-        raise KeyError("Invalid file id.")
-
-    file_location = tmp['file_location']
-    is_remote = tmp['is_remote']
-
-    if not tmp['file_exists'] and not is_remote:
-        raise KeyError("The file for this id does not exist.")
-    return file_location, is_remote
 
 
 def get_directory_structure(rootdir):
-    """
-    Creates a nested dictionary that represents the folder structure of rootdir
-    """
-    dir = {}
+    """Creates a nested dictionary that represents the folder structure of
+    rootdir."""
+    directory = {}
     rootdir = rootdir.rstrip(os.sep)
     start = rootdir.rfind(os.sep) + 1
-    for path, dirs, files in os.walk(rootdir):
+    for path, _, files in os.walk(rootdir):
         folders = path[start:].split(os.sep)
         subdir = {f : os.path.join(path, f) for f in files}
-        parent = reduce(dict.get, folders[:-1], dir)
+        parent = reduce(dict.get, folders[:-1], directory)
         parent[folders[-1]] = subdir
-        # print(subdir)
-        # print(path)
-    return dir
+    return directory
 
 def build_file_tree_html(tree):
+    """Transforms a dictionary representing a file tree into a depth-first
+    list."""
     def build_level(curr_dir, depth=0):
-        """Makes the lists of transformed file names"""
+        """Recursive depth-first file list builder. Given a dictionary
+        representing a tree of files/folders, transforms that into a list of
+        lists, each sub-list containing two entries:
+            0. The name of the node
+            1. If the node is a file, the full path to that file. If the node
+               is a directory, the value `None`
+        Examples:
+
+            input:
+                {
+                    "thing0": {
+                        "second_example": {
+                            "ex2.txt": "./files/buckets/thing0/second_example/ex2.txt",
+                            "ex2_01.txt": "./files/buckets/thing0/second_example/ex2_01.txt"
+                        },
+                        "another_thing.txt": "./files/buckets/thing0/another_thing.txt"
+                    }
+                }
+
+            output:
+                [['  thing0', None],
+                 ['    another_thing.txt', './files/buckets/thing0/another_thing.txt'],
+                 ['    second_example', None],
+                 ['      ex2.txt', './files/buckets/thing0/second_example/ex2.txt'],
+                 ['      ex2_01.txt', './files/buckets/thing0/second_example/ex2_01.txt']]
+        """
         line_list = []
         node_str = ""
         for item in sorted(curr_dir.keys()):
             node_str += "  "*depth
             node_str = ((node_str+item)[:48]+'..') if (len(node_str+item)) > 50 else node_str+item
-            if isinstance(curr_dir[item], basestring):
+            if isinstance(curr_dir[item], six.string_types):
                 line_list.append([
                     node_str, curr_dir[item]
                 ])
@@ -78,34 +95,34 @@ def build_file_tree_html(tree):
         return line_list
 
     lines = []
-    for x in tree:
-        lines += build_level(x)
+    for branch in tree:
+        lines += build_level(branch)
     return lines
 
 
 # These next two functions are from here:
 #     http://blog.asgaard.co.uk/2012/08/03/http-206-partial-content-for-flask-python
-@app.after_request
+@APP.after_request
 def add_range_headers(response):
     """Lets browsers know they can request ranges."""
     response.headers.add('Accept-Ranges', 'bytes')
     return response
 
-def send_file_partial(path, request):
+def send_file_partial(path, req):
     """
         Simple wrapper around send_file which handles HTTP 206 Partial Content
         (byte ranges)
         TODO: handle all send_file args, mirror send_file's error handling
         (if it has any)
     """
-    range_header = request.headers.get('Range', None)
+    range_header = req.headers.get('Range', None)
     if not range_header:
         return send_file(path)
 
-    size = os.path.getsize(path)    
+    size = os.path.getsize(path)
     byte1, byte2 = 0, None
 
-    range_str = re.search('(\d+)-(\d*)', range_header).groups()
+    range_str = re.search(r'(\d+)-(\d*)', range_header).groups()
 
     if range_str[0]:
         byte1 = int(range_str[0])
@@ -121,9 +138,9 @@ def send_file_partial(path, request):
         t_file.seek(byte1)
         data = t_file.read(length)
 
-    to_return = Response(data, 
+    to_return = Response(data,
                          206,
-                         mimetype=mimetypes.guess_type(path)[0], 
+                         mimetype=mimetypes.guess_type(path)[0],
                          direct_passthrough=True)
     to_return.headers.add(
         'Content-Range',
@@ -133,19 +150,20 @@ def send_file_partial(path, request):
     return to_return
 
 
-@app.route('/')
+@APP.route('/')
 def root():
     """Serves a blank root."""
     return ""
 
 
-@app.route('/add_file/', methods=['GET', 'POST'])
+@APP.route('/add_file/', methods=['GET', 'POST'])
 @basic_auth.required
 def add_url():
     """Adds a file entry to the database."""
     sql_db = DBCLASS()
     if request.method == 'POST':
-        data = json.loads(request.data)
+        print("Request:", request.get_json(force=True))
+        data = request.get_json(force=True)
         if 'file_location' in data:
             file_location = data['file_location']
         else:
@@ -160,20 +178,24 @@ def add_url():
         return render_template('active_links.html', files=sql_db.to_dict(), name="Active Links")
 
 
-@app.route('/list_files/')
+@APP.route('/list_files/')
 @basic_auth.required
 def get_file_list():
+    """Rnders list of files."""
     buckets = []
     for b in CONFIG.buckets:
         tree = get_directory_structure(b)
-        tree = { b: tree[tree.keys()[0]]}
+        print(tree)
+        tree = {b: tree[list(tree)[0]]}
         buckets.append(tree)
+    print(buckets)
     buckets = build_file_tree_html(buckets)
+    print(buckets)
 
     return render_template('file_list.html', file_struct=buckets, name="File List")
 
 
-@app.route('/list_active/')
+@APP.route('/list_active/')
 @basic_auth.required
 def list_active():
     """Lists all the possible url's and what they point to."""
@@ -182,37 +204,19 @@ def list_active():
 
 
 
-# This function was originally adapted almost exactly from here:
-#     https://gist.github.com/jessejlt/1306827
-#
-# However, that method doesn't work for crap. The only way that actually
-# works, and the best way, is to use the built in `send_file` method.
-@app.route('/get/<file_id>')
+@APP.route('/get/<file_id>')
 def download(file_id):
-    """Serves the file being requested."""
-    file_location, is_remote = get_file_params(file_id)
-
-    def update_file_location(location):
-        sql_db = DBCLASS()
-        sql_db.update_location(file_id, location)
-
-    if is_remote:
-        stream = http_streamer.Streamer(\
-            file_location,\
-            cache=True,\
-            cache_location=CONFIG.cache)
-        return Response(stream.generator(update_file_location), mimetype=stream.mimetype)
-
-    else:
-        return send_file_partial(file_location, request)
+    """Dummy route to allow flask to properly generate links. This is
+    unreachable, since it's manually overriden in the app.py file."""
+    return ["Don't know how you got here..."]
 
 
-@app.route('/remove/<file_id>')
+@APP.route('/remove/<file_id>')
 @basic_auth.required
 def remove(file_id):
     sql_db = DBCLASS()
 
-    # To keep disk-space lean, when 
+    # To keep disk-space lean, when
     entry = sql_db.get_entry(file_id)
     tmp = entry['file_location']
     tmp = os.path.join(os.path.abspath(CONFIG.cache), os.path.basename(tmp))
@@ -223,6 +227,8 @@ def remove(file_id):
     sql_db.remove_entry(file_id)
     return ""
 
+APP.debug = True
+
 if __name__ == '__main__':
-    app.debug = True
-    app.run(host='0.0.0.0', port=5000)
+    APP.debug = True
+    APP.run(host='0.0.0.0', port=5000)

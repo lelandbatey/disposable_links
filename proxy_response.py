@@ -1,11 +1,12 @@
 from __future__ import print_function
 from threading import Thread
-from Queue import Queue, Full
+from queue import Queue, Full
 import mimetypes
-import urlparse
+from urllib import parse as urlparse
+from urllib import request as urllib2
 import os.path
-import urllib2
-import httplib
+# import urllib2
+import http
 import time
 import re
 
@@ -17,7 +18,7 @@ def get_nocase(d, v):
 
 def get_status_from_code(code):
     """Returns the proper http response message for a given code."""
-    return str(code)+" "+httplib.responses[code]
+    return str(code)+" "+http.client.responses[code]
 
 
 class OtherResponse(object):
@@ -28,7 +29,7 @@ class OtherResponse(object):
 
     def __iter__(self):
         return iter(["404"])
-        
+
 
 class CacheResponse(object):
     """
@@ -109,9 +110,9 @@ class CacheResponse(object):
         db.lock_entry(self.file_id)
         # print("Downloading file to disk.")
         try:
-            if 'HOST' in self.request_headers: 
+            if 'HOST' in self.request_headers:
                 del self.request_headers['HOST']
-            
+
             url = db.get_entry(self.file_id)['remote_location']
             request = urllib2.Request(url, headers=self.request_headers)
             try:
@@ -134,7 +135,7 @@ class CacheResponse(object):
                 cache_file.write(chunk)
             # File has been downloaded
             db.update_location(self.file_id, location)
-            db.unlock_entry(self.file_id)            
+            db.unlock_entry(self.file_id)
         except Exception as err:
             # print("Encountered err while downloading to disk: ", err)
             raise err

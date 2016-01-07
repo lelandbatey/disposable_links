@@ -1,12 +1,15 @@
 #!/usr/bin/env python
 from __future__ import print_function
+import urllib
+import http
+import gc
+
 from werkzeug.wsgi import DispatcherMiddleware
-from frontend import app as frontend
+from werkzeug.serving import run_simple
+
+from frontend import APP as frontend
 import proxy_response
 import database as appdb
-import httplib
-import urllib
-import gc
 
 
 # This is a weird way to create a sort of 'enum'
@@ -67,7 +70,7 @@ def get_url(environ):
         # Since the url was unescaped, if we escape the entire thing we'll
         # accidentally escape the 'scheme' section of the url. So, we skip the
         # first bit (arbitrary amount) of the url when re-encoding.
-        remote = "".join([remote[:8], urllib.quote(remote[8:])])
+        remote = "".join([remote[:8], urllib.parse.quote(remote[8:])])
     return remote, should_cache, file_id
 
 
@@ -95,12 +98,12 @@ def encode_url(request_value):
     # If we escape the entire thing we'll
     # accidentally escape the 'scheme' section of the url. So, we skip the
     # first bit (arbitrary amount) of the url when re-encoding.
-    return "".join([request_value[:8], urllib.quote(request_value[8:])])
+    return "".join([request_value[:8], urllib.parse.quote(request_value[8:])])
 
 
 def get_status_from_code(code):
     """Returns the proper http response message for a given code."""
-    return str(code)+" "+httplib.responses[code]
+    return str(code)+" "+http.client.responses[code]
 
 
 def caching_proxy(environ, start_response):
@@ -130,7 +133,8 @@ def caching_proxy(environ, start_response):
     """
     gc.collect()
 
-    response = status = None
+    response = None
+    status = None
 
     request_value = environ['PATH_INFO'][1:]
     request_headers = extract_request_headers(environ)
@@ -169,16 +173,19 @@ def test_enum():
     for v in vals:
         request_type = get_request_type(v)
         print(v)
-        if request_type == RequestType.direct: print('direct')
-        elif request_type == RequestType.file_id: print('file_id')
-        elif request_type == RequestType.other: print('other')
-        else: print("Not any type of request (this is bad)")
+        if request_type == RequestType.direct:
+            print('direct')
+        elif request_type == RequestType.file_id:
+            print('file_id')
+        elif request_type == RequestType.other:
+            print('other')
+        else:
+            print("Not any type of request (this is bad)")
 
 
 if __name__ == '__main__':
     # test_enum()
     # Run a debug server
-    from werkzeug.serving import run_simple
     run_simple('localhost', 5000, APPLICATION, use_reloader=True)
 
 
